@@ -73,8 +73,6 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    
-
     setState(() {
       _isLoading = true;
     });
@@ -94,10 +92,13 @@ class _LoginPageState extends State<LoginPage> {
         MaterialPageRoute(builder: (context) => HomePage(user: user)),
         (route) => false,
       );
-    } else if (res['statusCode'] == 404 && res['data']['message'] == 'USER_NOT_FOUND') {
+    } else if (res['statusCode'] == 404 &&
+        res['data']['message'] == 'USER_NOT_FOUND') {
       _showRedirectSignUpDialog();
     } else {
-      _showErrorDialog(res['data']['message'] ?? 'Invalid username or password');
+      _showErrorDialog(
+        res['data']['message'] ?? 'Invalid username or password',
+      );
     }
   }
 
@@ -116,7 +117,8 @@ class _LoginPageState extends State<LoginPage> {
         // google_sign_in v7+ uses singleton and requires initialize() once
         await GoogleSignIn.instance.initialize(
           serverClientId:
-      '999208182045-p093pkpunvjokr8b9o1m1p2j4k5ahq91.apps.googleusercontent.com',);
+              '999208182045-p093pkpunvjokr8b9o1m1p2j4k5ahq91.apps.googleusercontent.com',
+        );
         final googleUser = await GoogleSignIn.instance.authenticate();
         final googleAuth = googleUser.authentication;
         token = googleAuth.idToken;
@@ -136,33 +138,47 @@ class _LoginPageState extends State<LoginPage> {
         } catch (_) {}
       } else {
         final result = await FacebookAuth.instance.login(
-  permissions: ['email', 'public_profile'],
-);
+          permissions: ['email', 'public_profile'],
+        );
 
-if (result.status == LoginStatus.success) {
-  token = result.accessToken?.tokenString;
+        if (result.status == LoginStatus.success) {
+          token = result.accessToken?.tokenString;
 
-  final userData = await FacebookAuth.instance.getUserData(
-    fields: "name,email,picture.width(200)",
-  );
+          final userData = await FacebookAuth.instance.getUserData(
+            fields: "name,email,picture.width(200)",
+          );
 
-  name = userData['name'] ?? 'Facebook User';
-  email = userData['email'] ?? '';
+          name = userData['name'] ?? 'Facebook User';
+          email = userData['email'] ?? '';
 
-  if (email.isEmpty) {
-    email = 'yenngoc123@gmail.com';
-  }
+          if (email.isEmpty) {
+            final fbId =
+                userData['id'] ??
+                DateTime.now().millisecondsSinceEpoch.toString();
+            email = 'fb_$fbId@facebook.com';
+          }
 
-  photoUrl = userData['picture']?['data']?['url'];
-}
+          photoUrl = userData['picture']?['data']?['url'];
+        } else if (result.status == LoginStatus.cancelled) {
+          if (!mounted) return;
+          _showErrorDialog('Đăng nhập Facebook đã bị hủy.');
+          return;
+        } else {
+          if (!mounted) return;
+          _showErrorDialog(
+            'Facebook login failed: ${result.message ?? 'Unknown error'}',
+          );
+          return;
+        }
       }
     } catch (e) {
-        debugPrint('GOOGLE ERROR = $e');
+      debugPrint('SOCIAL LOGIN ERROR = $e');
 
-        if (!mounted) return;
+      if (!mounted) return;
 
-        _showErrorDialog(e.toString());
-      }
+      _showErrorDialog(e.toString());
+      return;
+    }
 
     if (!mounted) return;
 
@@ -170,33 +186,55 @@ if (result.status == LoginStatus.success) {
       _isLoading = false;
     });
 
-    if (token != null) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => ConfirmAccountDialog(
-          provider: provider,
-          name: name,
-          email: email,
-          photoUrl: photoUrl,
-        ),
-      );
-
-      if (confirm != true) {
-        _showErrorDialog('Đăng nhập thất bại (Đã hủy liên kết tài khoản)');
-        return;
-      }
-
-      _sendSocialTokenToBackend(provider, token);
+    if (token == null) {
+      _showErrorDialog('Không thể nhận token từ Facebook. Vui lòng thử lại.');
+      return;
     }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => ConfirmAccountDialog(
+        provider: provider,
+        name: name,
+        email: email,
+        photoUrl: photoUrl,
+      ),
+    );
+
+    if (confirm != true) {
+      _showErrorDialog('Đăng nhập thất bại (Đã hủy liên kết tài khoản)');
+      return;
+    }
+
+    _sendSocialTokenToBackend(
+      provider,
+      token,
+      name: name,
+      email: email,
+      photoUrl: photoUrl,
+    );
   }
 
-  Future<void> _sendSocialTokenToBackend(String provider, String token) async {
+  Future<void> _sendSocialTokenToBackend(
+    String provider,
+    String token, {
+    required String name,
+    required String email,
+    String? photoUrl,
+  }) async {
     setState(() {
       _isLoading = true;
     });
 
-    final res = await ApiService.socialLogin(provider, token, signUp: false);
+    final res = await ApiService.socialLogin(
+      provider,
+      token,
+      signUp: false,
+      name: name,
+      email: email,
+      photoUrl: photoUrl,
+    );
 
     if (!mounted) return;
 
@@ -211,7 +249,8 @@ if (result.status == LoginStatus.success) {
         MaterialPageRoute(builder: (context) => HomePage(user: user)),
         (route) => false,
       );
-    } else if (res['statusCode'] == 404 && res['data']['message'] == 'USER_NOT_FOUND') {
+    } else if (res['statusCode'] == 404 &&
+        res['data']['message'] == 'USER_NOT_FOUND') {
       _showRedirectSignUpDialog();
     } else {
       _showErrorDialog(res['data']['message'] ?? 'Social login failed');
@@ -248,9 +287,7 @@ if (result.status == LoginStatus.success) {
               Navigator.pop(ctx);
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const SignUpPage(),
-                ),
+                MaterialPageRoute(builder: (context) => const SignUpPage()),
               );
             },
             child: Text(
@@ -280,11 +317,11 @@ if (result.status == LoginStatus.success) {
           ),
         ),
         content: Text(
-          message == 'USER_NOT_FOUND' 
-              ? 'Tài khoản không tồn tại.' 
-              : message == 'INVALID_CREDENTIALS' 
-                  ? 'Mật khẩu không chính xác.' 
-                  : message,
+          message == 'USER_NOT_FOUND'
+              ? 'Tài khoản không tồn tại.'
+              : message == 'INVALID_CREDENTIALS'
+              ? 'Mật khẩu không chính xác.'
+              : message,
           style: GoogleFonts.inter(color: AppColors.textPrimary),
         ),
         actions: [
@@ -306,21 +343,18 @@ if (result.status == LoginStatus.success) {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-  backgroundColor: AppColors.background,
+      backgroundColor: AppColors.background,
 
-  appBar: AppBar(
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    leading: IconButton(
-      icon: const Icon(
-        Icons.arrow_back_ios,
-        color: AppColors.textPrimary,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary),
+          onPressed: () {
+            SystemNavigator.pop();
+          },
+        ),
       ),
-      onPressed: () {
-        SystemNavigator.pop();
-      },
-    ),
-  ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -392,37 +426,37 @@ if (result.status == LoginStatus.success) {
                 ),
                 const SizedBox(height: 16),
 
-Center(
-  child: GestureDetector(
-    onTap: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const SignUpPage(),
-        ),
-      );
-    },
-    child: RichText(
-      text: TextSpan(
-        text: "Don't have an account? ",
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          color: AppColors.textPrimary,
-        ),
-        children: [
-          TextSpan(
-            text: 'Sign up',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primary,
-            ),
-          ),
-        ],
-      ),
-    ),
-  ),
-),
+                Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SignUpPage(),
+                        ),
+                      );
+                    },
+                    child: RichText(
+                      text: TextSpan(
+                        text: "Don't have an account? ",
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: 'Sign up',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 110),
                 Center(
                   child: Text(

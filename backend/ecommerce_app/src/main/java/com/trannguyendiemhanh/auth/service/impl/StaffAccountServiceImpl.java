@@ -120,11 +120,12 @@ public class StaffAccountServiceImpl implements StaffAccountService {
     public AuthResponse socialLogin(SocialLoginRequest request) {
         SocialProfile profile;
         try {
-            if ("google".equalsIgnoreCase(request.getProvider())) {
+            profile = profileFromRequest(request);
+            if (profile == null && "google".equalsIgnoreCase(request.getProvider())) {
                 profile = verifyGoogleToken(request.getToken());
-            } else if ("facebook".equalsIgnoreCase(request.getProvider())) {
+            } else if (profile == null && "facebook".equalsIgnoreCase(request.getProvider())) {
                 profile = verifyFacebookToken(request.getToken());
-            } else {
+            } else if (profile == null) {
                 return AuthResponse.builder()
                         .success(false)
                         .message("INVALID_PROVIDER")
@@ -207,6 +208,41 @@ public class StaffAccountServiceImpl implements StaffAccountService {
                 .orElseThrow(() -> new RuntimeException("Account not found with ID: " + id));
     }
 
+    @Override
+    public AuthResponse changePassword(UUID accountId, String currentPassword, String newPassword) {
+        Optional<StaffAccount> accountOpt = staffAccountRepository.findById(accountId);
+        if (accountOpt.isEmpty()) {
+            return AuthResponse.builder()
+                    .success(false)
+                    .message("USER_NOT_FOUND")
+                    .build();
+        }
+
+        if (newPassword == null || newPassword.length() < 6) {
+            return AuthResponse.builder()
+                    .success(false)
+                    .message("PASSWORD_TOO_SHORT")
+                    .build();
+        }
+
+        StaffAccount account = accountOpt.get();
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, account.getPasswordHash())) {
+            return AuthResponse.builder()
+                    .success(false)
+                    .message("INVALID_CURRENT_PASSWORD")
+                    .build();
+        }
+
+        account.setPasswordHash(passwordEncoder.encode(newPassword));
+        staffAccountRepository.save(account);
+
+        return AuthResponse.builder()
+                .success(true)
+                .message("PASSWORD_CHANGED")
+                .user(mapToUserDto(account))
+                .build();
+    }
+
     private AuthResponse.UserDto mapToUserDto(StaffAccount account) {
         return AuthResponse.UserDto.builder()
                 .id(account.getId())
@@ -216,6 +252,28 @@ public class StaffAccountServiceImpl implements StaffAccountService {
                 .phoneNumber(account.getPhoneNumber())
                 .roleName(account.getRole() != null ? account.getRole().getRoleName() : null)
                 .build();
+    }
+
+    private SocialProfile profileFromRequest(SocialLoginRequest request) {
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            return null;
+        }
+
+        SocialProfile profile = new SocialProfile();
+        profile.setEmail(request.getEmail().trim().toLowerCase());
+        profile.setImage(request.getPhotoUrl());
+
+        String name = request.getName() == null ? "" : request.getName().trim();
+        if (name.isEmpty()) {
+            profile.setFirstName("Social");
+            profile.setLastName("User");
+            return profile;
+        }
+
+        String[] nameParts = name.split("\\s+", 2);
+        profile.setFirstName(nameParts[0]);
+        profile.setLastName(nameParts.length > 1 ? nameParts[1] : "");
+        return profile;
     }
 
     private SocialProfile verifyGoogleToken(String idToken) {

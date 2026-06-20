@@ -9,6 +9,7 @@ import com.trannguyendiemhanh.auth.dto.*;
 import com.trannguyendiemhanh.auth.service.StaffAccountService;
 
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -68,5 +69,27 @@ public class StaffAccountController {
                 "success", "true",
                 "message", "A password reset link has been sent to " + email
         ));
+    }
+
+    @PutMapping("/accounts/{accountId}/password")
+    public ResponseEntity<AuthResponse> changePassword(
+            @PathVariable String accountId,
+            @RequestBody Map<String, String> request) {
+        try {
+            AuthResponse response = staffAccountService.changePassword(
+                    UUID.fromString(accountId),
+                    request.get("currentPassword"),
+                    request.get("newPassword"));
+            if (!response.isSuccess()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(AuthResponse.builder()
+                            .success(false)
+                            .message("INVALID_ACCOUNT_ID")
+                            .build());
+        }
     }
 }

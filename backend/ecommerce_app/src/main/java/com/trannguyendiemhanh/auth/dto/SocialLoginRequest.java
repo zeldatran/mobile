@@ -7,4 +7,7 @@ public class SocialLoginRequest {
     private String provider; // "google" or "facebook"
     private String token;    // idToken for google, accessToken for facebook
     private boolean signUp;  // true if we want to register a new account if it doesn't exist
+    private String name;
+    private String email;
+    private String photoUrl;
 }

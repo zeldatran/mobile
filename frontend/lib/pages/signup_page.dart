@@ -96,8 +96,6 @@ class _SignUpPageState extends State<SignUpPage> {
       return;
     }
 
-
-
     setState(() {
       _isLoading = true;
     });
@@ -117,7 +115,8 @@ class _SignUpPageState extends State<SignUpPage> {
     if (res['statusCode'] == 201) {
       _showAlertDialog(
         title: 'Thành công',
-        message: 'Tài khoản của bạn đã được đăng ký thành công! Đang chuyển hướng đến trang Đăng nhập...',
+        message:
+            'Tài khoản của bạn đã được đăng ký thành công! Đang chuyển hướng đến trang Đăng nhập...',
         isSuccess: true,
       );
     } else {
@@ -151,9 +150,7 @@ class _SignUpPageState extends State<SignUpPage> {
         ),
         content: Text(
           message,
-          style: GoogleFonts.inter(
-            color: AppColors.textPrimary,
-          ),
+          style: GoogleFonts.inter(color: AppColors.textPrimary),
         ),
         actions: [
           TextButton(
@@ -190,7 +187,7 @@ class _SignUpPageState extends State<SignUpPage> {
       if (provider.toLowerCase() == 'google') {
         await GoogleSignIn.instance.initialize(
           serverClientId:
-      '999208182045-p093pkpunvjokr8b9o1m1p2j4k5ahq91.apps.googleusercontent.com',
+              '999208182045-p093pkpunvjokr8b9o1m1p2j4k5ahq91.apps.googleusercontent.com',
         );
         final googleUser = await GoogleSignIn.instance.authenticate();
         final googleAuth = googleUser.authentication;
@@ -210,7 +207,9 @@ class _SignUpPageState extends State<SignUpPage> {
           photoUrl = googleUser.photoUrl;
         } catch (_) {}
       } else {
-        final result = await FacebookAuth.instance.login(permissions: ['public_profile', 'email']);
+        final result = await FacebookAuth.instance.login(
+          permissions: ['public_profile', 'email'],
+        );
         if (result.status == LoginStatus.success) {
           token = result.accessToken?.tokenString;
 
@@ -226,7 +225,9 @@ class _SignUpPageState extends State<SignUpPage> {
     } catch (e) {
       debugPrint('Real social auth failed: $e');
       if (!mounted) return;
-      _showErrorDialog('Không thể kết nối tài khoản $provider. Vui lòng thử lại.');
+      _showErrorDialog(
+        'Không thể kết nối tài khoản $provider. Vui lòng thử lại.',
+      );
     }
 
     if (!mounted) return;
@@ -252,16 +253,35 @@ class _SignUpPageState extends State<SignUpPage> {
         return;
       }
 
-      _sendSocialTokenToBackend(provider, token);
+      _sendSocialTokenToBackend(
+        provider,
+        token,
+        name: name,
+        email: email,
+        photoUrl: photoUrl,
+      );
     }
   }
 
-  Future<void> _sendSocialTokenToBackend(String provider, String token) async {
+  Future<void> _sendSocialTokenToBackend(
+    String provider,
+    String token, {
+    required String name,
+    required String email,
+    String? photoUrl,
+  }) async {
     setState(() {
       _isLoading = true;
     });
 
-    final res = await ApiService.socialLogin(provider, token, signUp: true);
+    final res = await ApiService.socialLogin(
+      provider,
+      token,
+      signUp: true,
+      name: name,
+      email: email,
+      photoUrl: photoUrl,
+    );
 
     if (!mounted) return;
 
@@ -279,12 +299,15 @@ class _SignUpPageState extends State<SignUpPage> {
       } else {
         _showAlertDialog(
           title: 'Thành công',
-          message: 'Tài khoản $provider của bạn đã được đăng ký thành công! Đang chuyển hướng đến trang Đăng nhập...',
+          message:
+              'Tài khoản $provider của bạn đã được đăng ký thành công! Đang chuyển hướng đến trang Đăng nhập...',
           isSuccess: true,
         );
       }
     } else {
-      _showErrorDialog(res['data']['message'] ?? 'Xác thực tài khoản mạng xã hội thất bại.');
+      _showErrorDialog(
+        res['data']['message'] ?? 'Xác thực tài khoản mạng xã hội thất bại.',
+      );
     }
   }
 
@@ -382,7 +405,8 @@ class _SignUpPageState extends State<SignUpPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: GestureDetector(
-                    onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+                    onTap: () =>
+                        Navigator.pushReplacementNamed(context, '/login'),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

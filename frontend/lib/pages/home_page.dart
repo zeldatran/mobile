@@ -20,69 +20,18 @@ class _HomePageState extends State<HomePage> {
   final PageController _pageController = PageController();
   int _pageIndex = 0;
   bool _isLoadingProducts = true;
+  bool _isOpeningProductDetail = false;
   String? _productLoadError;
+  final Set<String> _favoriteKeys = {};
 
-  List<_ProductCardData> _newProducts = const [
-    _ProductCardData(
-      image: 'assets/images/new1.png',
-      title: 'Striped Shirt',
-      brand: 'Dorothy Perkins',
-      price: 39,
-      tagText: 'NEW',
-      tagColor: Color(0xFF222222),
-    ),
-    _ProductCardData(
-      image: 'assets/images/new2.png',
-      title: 'White Shirt',
-      brand: 'Mango Boy',
-      price: 29,
-      tagText: 'NEW',
-      tagColor: Color(0xFF222222),
-    ),
-    _ProductCardData(
-      image: 'assets/images/SportMen.webp',
-      title: 'Summer Skirt',
-      brand: 'Lime',
-      price: 45,
-      tagText: 'NEW',
-      tagColor: Color(0xFF222222),
-    ),
-  ];
-
-  List<_ProductCardData> _saleProducts = const [
-    _ProductCardData(
-      image: 'assets/images/EveningDress.webp',
-      title: 'Evening Dress',
-      brand: 'Dorothy Perkins',
-      price: 12,
-      oldPrice: 15,
-      tagText: '-20%',
-      tagColor: AppColors.primary,
-    ),
-    _ProductCardData(
-      image: 'assets/images/SportDress1.avif',
-      title: 'Sport Dress',
-      brand: 'Sitlly',
-      price: 19,
-      oldPrice: 22,
-      tagText: '-15%',
-      tagColor: AppColors.primary,
-    ),
-    _ProductCardData(
-      image: 'assets/images/SportDress2.jpg',
-      title: 'Sport Dress',
-      brand: 'Dorothy Perkins',
-      price: 12,
-      oldPrice: 14,
-      tagText: '-20%',
-      tagColor: AppColors.primary,
-    ),
-  ];
+  List<_ProductCardData> _newProducts = const [];
+  List<_ProductCardData> _saleProducts = const [];
 
   @override
   void initState() {
     super.initState();
     _loadProducts();
+    _loadFavorites();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,6 +53,8 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _isLoadingProducts = true;
       _productLoadError = null;
+      _saleProducts = const [];
+      _newProducts = const [];
     });
 
     final saleResponse = await ApiService.getProductsByTag('sale');
@@ -117,18 +68,41 @@ class _HomePageState extends State<HomePage> {
           saleResponse['data'],
           section: _ProductSection.sale,
         );
-        _newProducts = _withSportMenFallback(_productsFromApi(
+        _newProducts = _productsFromApi(
           newResponse['data'],
           section: _ProductSection.newCollection,
-        ));
+        );
         _isLoadingProducts = false;
       });
     } else {
       setState(() {
+        _saleProducts = const [];
+        _newProducts = const [];
+        _favoriteKeys.clear();
         _productLoadError = 'Khong tai duoc san pham tu server';
         _isLoadingProducts = false;
       });
     }
+  }
+
+  Future<void> _loadFavorites() async {
+    if (widget.user.id.isEmpty) return;
+    final response = await ApiService.getFavorites(widget.user.id);
+    if (!mounted ||
+        response['statusCode'] != 200 ||
+        response['data'] is! List) {
+      return;
+    }
+    setState(() {
+      _favoriteKeys
+        ..clear()
+        ..addAll(
+          (response['data'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((json) => (json['productKey'] ?? '').toString())
+              .where((key) => key.isNotEmpty),
+        );
+    });
   }
 
   List<_ProductCardData> _productsFromApi(
@@ -141,25 +115,6 @@ class _HomePageState extends State<HomePage> {
         .whereType<Map<String, dynamic>>()
         .map((json) => _ProductCardData.fromProductJson(json, section: section))
         .toList();
-  }
-
-  List<_ProductCardData> _withSportMenFallback(List<_ProductCardData> products) {
-    final hasSportMen = products.any(
-      (product) => product.image.toLowerCase().contains('sportmen.webp'),
-    );
-    if (hasSportMen) return products;
-
-    return [
-      ...products,
-      const _ProductCardData(
-        image: 'assets/images/SportMen.webp',
-        title: 'Summer Shirt',
-        brand: 'Lime',
-        price: 45,
-        tagText: 'NEW',
-        tagColor: Color(0xFF222222),
-      ),
-    ];
   }
 
   @override
@@ -183,6 +138,9 @@ class _HomePageState extends State<HomePage> {
                 isLoading: _isLoadingProducts,
                 errorText: _productLoadError,
                 onRefresh: _loadProducts,
+                favoriteKeys: _favoriteKeys,
+                onFavoriteTap: _handleFavoriteTap,
+                onProductTap: _openProductDetail,
               ),
               _StreetClothesPage(
                 saleProducts: _saleProducts,
@@ -190,8 +148,15 @@ class _HomePageState extends State<HomePage> {
                 isLoading: _isLoadingProducts,
                 errorText: _productLoadError,
                 onRefresh: _loadProducts,
+                favoriteKeys: _favoriteKeys,
+                onFavoriteTap: _handleFavoriteTap,
+                onProductTap: _openProductDetail,
               ),
-              _CollectionPage(onRefresh: _loadProducts),
+              _CollectionPage(
+                isLoading: _isLoadingProducts,
+                errorText: _productLoadError,
+                onRefresh: _loadProducts,
+              ),
             ],
           ),
           Align(
@@ -203,14 +168,88 @@ class _HomePageState extends State<HomePage> {
                 duration: const Duration(milliseconds: 350),
                 curve: Curves.easeOutCubic,
               ),
-              onShopTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ShopPage()),
-              ),
+              onShopTap: () => _openShopSurface('Shop'),
+              onBagTap: () => _openShopSurface('Bag'),
+              onFavoritesTap: () => _openShopSurface('Favorites'),
+              onProfileTap: () => _openShopSurface('Profile'),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _handleFavoriteTap(_ProductCardData product) async {
+    final key = product.productKey;
+    if (_favoriteKeys.contains(key)) {
+      final response = await ApiService.removeFavorite(
+        accountId: widget.user.id,
+        productKey: key,
+      );
+      if (!mounted) return;
+      if (response['statusCode'] == 204 || response['statusCode'] == 200) {
+        setState(() => _favoriteKeys.remove(key));
+      }
+      return;
+    }
+
+    final response = await ApiService.addFavorite(
+      accountId: widget.user.id,
+      productKey: key,
+      productName: product.title,
+      brand: product.brand,
+      image: product.image,
+      price: product.price,
+      oldPrice: product.oldPrice,
+      discountPercent: product.discountPercent,
+      rating: product.rating,
+      reviews: product.reviews,
+      size: 'S',
+      color: 'Black',
+    );
+    if (!mounted) return;
+    if (response['statusCode'] == 201 || response['statusCode'] == 200) {
+      setState(() => _favoriteKeys.add(key));
+    }
+  }
+
+  Future<void> _openProductDetail(_ProductCardData product) async {
+    if (_isOpeningProductDetail) return;
+    _isOpeningProductDetail = true;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProductDetailRoutePage(
+            user: widget.user,
+            product: product.toShopPayload(),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _isOpeningProductDetail = false;
+      }
+    }
+  }
+
+  void _openShopSurface(String tab) {
+    Navigator.push(
+      context,
+      _shopRoute(ShopPage(user: widget.user, initialTab: tab)),
+    );
+  }
+
+  PageRouteBuilder<void> _shopRoute(Widget page) {
+    return PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => page,
+      transitionsBuilder: (_, animation, _, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 180),
     );
   }
 }
@@ -220,17 +259,31 @@ class _FashionSalePage extends StatelessWidget {
   final bool isLoading;
   final String? errorText;
   final Future<void> Function() onRefresh;
+  final Set<String> favoriteKeys;
+  final ValueChanged<_ProductCardData> onFavoriteTap;
+  final ValueChanged<_ProductCardData> onProductTap;
 
   const _FashionSalePage({
     required this.newProducts,
     required this.isLoading,
     required this.errorText,
     required this.onRefresh,
+    required this.favoriteKeys,
+    required this.onFavoriteTap,
+    required this.onProductTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final heroHeight = MediaQuery.sizeOf(context).height * 0.52;
+
+    if (isLoading || errorText != null) {
+      return _HomeStatusPage(
+        isLoading: isLoading,
+        message: errorText,
+        onRefresh: onRefresh,
+      );
+    }
 
     return RefreshIndicator(
       color: AppColors.primary,
@@ -258,6 +311,9 @@ class _FashionSalePage extends StatelessWidget {
               products: newProducts,
               isLoading: isLoading,
               errorText: errorText,
+              favoriteKeys: favoriteKeys,
+              onFavoriteTap: onFavoriteTap,
+              onProductTap: onProductTap,
             ),
           ],
         ),
@@ -272,6 +328,9 @@ class _StreetClothesPage extends StatelessWidget {
   final bool isLoading;
   final String? errorText;
   final Future<void> Function() onRefresh;
+  final Set<String> favoriteKeys;
+  final ValueChanged<_ProductCardData> onFavoriteTap;
+  final ValueChanged<_ProductCardData> onProductTap;
 
   const _StreetClothesPage({
     required this.saleProducts,
@@ -279,10 +338,21 @@ class _StreetClothesPage extends StatelessWidget {
     required this.isLoading,
     required this.errorText,
     required this.onRefresh,
+    required this.favoriteKeys,
+    required this.onFavoriteTap,
+    required this.onProductTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading || errorText != null) {
+      return _HomeStatusPage(
+        isLoading: isLoading,
+        message: errorText,
+        onRefresh: onRefresh,
+      );
+    }
+
     return RefreshIndicator(
       color: AppColors.primary,
       onRefresh: onRefresh,
@@ -308,6 +378,9 @@ class _StreetClothesPage extends StatelessWidget {
               products: saleProducts,
               isLoading: isLoading,
               errorText: errorText,
+              favoriteKeys: favoriteKeys,
+              onFavoriteTap: onFavoriteTap,
+              onProductTap: onProductTap,
             ),
             _SectionHeader(
               title: 'New',
@@ -318,6 +391,9 @@ class _StreetClothesPage extends StatelessWidget {
               products: newProducts,
               isLoading: isLoading,
               errorText: errorText,
+              favoriteKeys: favoriteKeys,
+              onFavoriteTap: onFavoriteTap,
+              onProductTap: onProductTap,
             ),
           ],
         ),
@@ -327,13 +403,27 @@ class _StreetClothesPage extends StatelessWidget {
 }
 
 class _CollectionPage extends StatelessWidget {
+  final bool isLoading;
+  final String? errorText;
   final Future<void> Function() onRefresh;
 
-  const _CollectionPage({required this.onRefresh});
+  const _CollectionPage({
+    required this.isLoading,
+    required this.errorText,
+    required this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
+
+    if (isLoading || errorText != null) {
+      return _HomeStatusPage(
+        isLoading: isLoading,
+        message: errorText,
+        onRefresh: onRefresh,
+      );
+    }
 
     return RefreshIndicator(
       color: AppColors.primary,
@@ -398,6 +488,48 @@ class _CollectionPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HomeStatusPage extends StatelessWidget {
+  final bool isLoading;
+  final String? message;
+  final Future<void> Function() onRefresh;
+
+  const _HomeStatusPage({
+    required this.isLoading,
+    required this.message,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: onRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
+        children: [
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.78,
+            child: Center(
+              child: isLoading
+                  ? const CircularProgressIndicator(color: AppColors.primary)
+                  : Text(
+                      message ?? 'Khong co du lieu',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -564,11 +696,17 @@ class _ProductRail extends StatelessWidget {
   final List<_ProductCardData> products;
   final bool isLoading;
   final String? errorText;
+  final Set<String> favoriteKeys;
+  final ValueChanged<_ProductCardData> onFavoriteTap;
+  final ValueChanged<_ProductCardData> onProductTap;
 
   const _ProductRail({
     required this.products,
     required this.isLoading,
     required this.errorText,
+    required this.favoriteKeys,
+    required this.onFavoriteTap,
+    required this.onProductTap,
   });
 
   @override
@@ -622,7 +760,15 @@ class _ProductRail extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         itemCount: products.length,
         separatorBuilder: (_, _) => const SizedBox(width: 16),
-        itemBuilder: (context, index) => _ProductCard(data: products[index]),
+        itemBuilder: (context, index) {
+          final product = products[index];
+          return _ProductCard(
+            data: product,
+            favorite: favoriteKeys.contains(product.productKey),
+            onTap: () => onProductTap(product),
+            onFavoriteTap: () => onFavoriteTap(product),
+          );
+        },
       ),
     );
   }
@@ -630,131 +776,155 @@ class _ProductRail extends StatelessWidget {
 
 class _ProductCard extends StatelessWidget {
   final _ProductCardData data;
+  final bool favorite;
+  final VoidCallback onTap;
+  final VoidCallback onFavoriteTap;
 
-  const _ProductCard({required this.data});
+  const _ProductCard({
+    required this.data,
+    required this.favorite,
+    required this.onTap,
+    required this.onFavoriteTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 148,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: _ProductImage(image: data.image),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 148,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _ProductImage(image: data.image),
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: data.tagColor,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      data.tagText,
-                      style: GoogleFonts.inter(
-                        color: AppColors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: data.tagColor,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        data.tagText,
+                        style: GoogleFonts.inter(
+                          color: AppColors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: -18,
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
+                  Positioned(
+                    right: 0,
+                    bottom: -18,
+                    child: InkWell(
+                      onTap: onFavoriteTap,
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.favorite_border,
-                      color: AppColors.textSecondary,
-                      size: 20,
+                        child: Icon(
+                          favorite ? Icons.favorite : Icons.favorite_border,
+                          color: favorite
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                          size: 20,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: List.generate(
-              5,
-              (_) => const Icon(Icons.star, color: Color(0xFFFFBA49), size: 13),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            data.brand,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: AppColors.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            data.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              if (data.oldPrice != null) ...[
-                Text(
-                  '${data.oldPrice}\$',
-                  style: GoogleFonts.inter(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    decoration: TextDecoration.lineThrough,
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                '${data.price}\$',
-                style: GoogleFonts.inter(
-                  color: data.oldPrice != null
-                      ? AppColors.primary
-                      : AppColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+                ],
               ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: List.generate(5, (index) {
+                final active = index < data.rating.round().clamp(0, 5);
+                return Icon(
+                  active ? Icons.star : Icons.star_border,
+                  color: active
+                      ? const Color(0xFFFFBA49)
+                      : AppColors.textSecondary,
+                  size: 13,
+                );
+              }),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              data.brand,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              data.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                if (data.oldPrice != null) ...[
+                  Text(
+                    '${data.oldPrice}\$',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  '${data.price}\$',
+                  style: GoogleFonts.inter(
+                    color: data.oldPrice != null
+                        ? AppColors.primary
+                        : AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -850,11 +1020,17 @@ class _BottomNav extends StatelessWidget {
   final int selectedIndex;
   final VoidCallback onHomeTap;
   final VoidCallback onShopTap;
+  final VoidCallback onBagTap;
+  final VoidCallback onFavoritesTap;
+  final VoidCallback onProfileTap;
 
   const _BottomNav({
     required this.selectedIndex,
     required this.onHomeTap,
     required this.onShopTap,
+    required this.onBagTap,
+    required this.onFavoritesTap,
+    required this.onProfileTap,
   });
 
   @override
@@ -885,9 +1061,17 @@ class _BottomNav extends StatelessWidget {
             label: 'Shop',
             onTap: onShopTap,
           ),
-          const _NavItem(icon: 'assets/icons/bag.svg', label: 'Bag'),
-          const _NavItem(icon: 'assets/icons/favourites.svg', label: 'Favorites'),
-          const _NavItem(icon: 'assets/icons/profile.svg', label: 'Profile'),
+          _NavItem(icon: 'assets/icons/bag.svg', label: 'Bag', onTap: onBagTap),
+          _NavItem(
+            icon: 'assets/icons/favourites.svg',
+            label: 'Favorites',
+            onTap: onFavoritesTap,
+          ),
+          _NavItem(
+            icon: 'assets/icons/profile.svg',
+            label: 'Profile',
+            onTap: onProfileTap,
+          ),
         ],
       ),
     );
@@ -954,6 +1138,9 @@ class _ProductCardData {
   final int? oldPrice;
   final String tagText;
   final Color tagColor;
+  final double rating;
+  final int reviews;
+  final String? productKeyOverride;
 
   const _ProductCardData({
     required this.image,
@@ -963,7 +1150,36 @@ class _ProductCardData {
     this.oldPrice,
     required this.tagText,
     required this.tagColor,
+    this.rating = 5,
+    this.reviews = 0,
+    this.productKeyOverride,
   });
+
+  String get productKey =>
+      productKeyOverride ??
+      '${brand.toLowerCase()}-${title.toLowerCase()}'
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+          .replaceAll(RegExp(r'^-+|-+$'), '');
+
+  int? get discountPercent {
+    final old = oldPrice;
+    if (old == null || old <= price) return null;
+    return (((old - price) / old) * 100).round();
+  }
+
+  Map<String, dynamic> toShopPayload() {
+    return {
+      'productKey': productKey,
+      'productName': title,
+      'brand': brand,
+      'image': image,
+      'price': price,
+      'oldPrice': oldPrice,
+      'discountPercent': discountPercent,
+      'rating': rating,
+      'reviews': reviews,
+    };
+  }
 
   factory _ProductCardData.fromProductJson(
     Map<String, dynamic> json, {
@@ -971,7 +1187,8 @@ class _ProductCardData {
   }) {
     final salePrice = _numToInt(json['salePrice']);
     final comparePrice = _numToInt(json['comparePrice']);
-    final hasDiscount = section == _ProductSection.sale &&
+    final hasDiscount =
+        section == _ProductSection.sale &&
         comparePrice != null &&
         salePrice != null &&
         comparePrice > salePrice;
@@ -991,6 +1208,10 @@ class _ProductCardData {
       tagColor: section == _ProductSection.sale
           ? AppColors.primary
           : const Color(0xFF222222),
+      rating: 5,
+      reviews: section == _ProductSection.sale ? 10 : 3,
+      productKeyOverride: (json['slug'] ?? json['productKey'] ?? json['id'])
+          ?.toString(),
     );
   }
 }
